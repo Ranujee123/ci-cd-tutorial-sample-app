@@ -21,3 +21,14 @@ def menu():
         body = { "error": "Sorry, the service is not available today." }
         status = 404
     return jsonify(body), status
+
+@app.route('/dish')
+def dish():
+    featured = Menu.query.offset(1).first() 
+    if featured:
+        body = { "featured_dish": featured.name }
+        status = 200
+    else:
+        body = { "error": "No featured dish available today." }
+        status = 404
+    return jsonify(body), status
