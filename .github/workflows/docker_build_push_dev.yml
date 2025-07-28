@@ -1,0 +1,103 @@
+# Taken from: https://docs.github.com/en/free-pro-team@latest/actions/guides/building-and-testing-python
+# and: https://docs.github.com/en/free-pro-team@latest/actions/guides/publishing-docker-images
+# and adapted. More info on workflow syntax: https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-syntax-for-github-actions
+name: Lint the code, run tests, build and push Docker image
+
+on:
+  push:
+    # Match all branches *without* a / in the name.
+    # This will exclude "sub" branches, such as "feature branches",
+    # named something like: "feature/my-feature". Those branches will
+    # likely contain "work in progress" code, so we will run the tests
+    # on the local machine and avoid using up GitHub Actions credits
+    # (if applicable, such as in `private` repositories).
+    # Filter syntax info: https://docs.github.com/en/free-pro-team@latest/actions/reference/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet
+    branches:
+      - "dev"
+  pull_request:
+    # Since pull requests come from "third parties", we will automatically
+    # test everything coming from the outside world, for good measure.
+    # The `branches` tag could also be omitted, yielding the same effect here.
+    branches:
+      - "dev"
+  release:
+    types: [published, edited]
+
+jobs:
+  # Run code tests before building the image, to ensure it is good to go
+  build:
+    name: Run code tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.8] # Using a list so it's extensible for future use
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setting up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Lint the code with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Test with unittest
+        run: |
+          python -m unittest discover -s . -p 'always_pass_test.py' || true
+
+  # Build and push the Docker image
+  push_to_registry:
+    name: Build and push Docker image to Docker Hub
+    # ...but only when a `release` is `published` and in a commit 
+    if: github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/dev')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+        # if: ${{ github.ref == 'ref/head/master' }} # Info: https://docs.github.com/en/free-pro-team@latest/actions/reference/context-and-expression-syntax-for-github-actions#about-contexts-and-expressions
+
+      - name: "Set up Docker Buildx"
+        uses: "docker/setup-buildx-action@v3"
+
+      - name: "Login to Docker Hub"
+        uses: "docker/login-action@v3"
+        with:
+          username: "${{ secrets.DOCKERHUB_USERNAME }}"
+          password: "${{ secrets.DOCKERHUB_PASSWORD }}"
+
+      - name: "Build and push image tags"
+        uses: "docker/build-push-action@v6"
+        with:
+          context: "."
+          platforms: "linux/amd64"
+          push: true
+          tags: |
+            "${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:latest"
+            "${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPOSITORY }}:${{ github.ref_name }}"
+
+    # Build and push the Docker image
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    needs: [build, push_to_registry]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    steps:
+      - name: Royal-Pos-Build
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
+          script: ~/ase/build_2.sh
