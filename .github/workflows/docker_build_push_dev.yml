@@ -76,7 +76,7 @@ jobs:
           username: "${{ secrets.DOCKERHUB_USERNAME }}"
           password: "${{ secrets.DOCKERHUB_PASSWORD }}"
 
-      - name: "Build and push image tags"
+      - name: "Build and push image tag"
         uses: "docker/build-push-action@v6"
         with:
           context: "."
