@@ -15,6 +15,6 @@ def menu():
 
 @app.route('/today')
 def today():
-    body = { "today_special": "Signature dish is koththu" }
+    body = { "today_special": "Signature dish is koththu for dev" }
     status = 200
     return jsonify(body), status
